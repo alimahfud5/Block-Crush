@@ -57,6 +57,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,6 +89,7 @@ import com.example.game.BOARD_SIZE
 import com.example.game.BlockEngine
 import com.example.game.GameMode
 import com.example.game.GameSessionState
+import com.example.game.GridCell
 import com.example.game.TOTAL_ADVENTURE_LEVELS
 import com.example.game.TrayPiece
 import com.example.ui.components.PurpleArenaBackground
@@ -142,11 +144,15 @@ fun GameScreen(
     val bestComboDisplay = maxOf(progress.classicBestCombo.toInt(), session.bestComboInMatch)
 
     // Root-coordinate drag tracking
+    var rootOriginInRoot by remember { mutableStateOf(Offset.Zero) }
     var boardOriginInRoot by remember { mutableStateOf(Offset.Zero) }
     var boardPixelSize by remember { mutableFloatStateOf(0f) }
 
     var draggingIndex by remember { mutableIntStateOf(-1) }
     var dragFingerInRoot by remember { mutableStateOf(Offset.Zero) }
+
+    val latestBoard by rememberUpdatedState(session.board)
+    val latestOnPlacePiece by rememberUpdatedState(onPlacePiece)
 
     val fingerLiftPx = with(density) { 88.dp.toPx() }
     val cellPx = if (boardPixelSize > 0f) boardPixelSize / BOARD_SIZE else 0f
@@ -162,17 +168,14 @@ fun GameScreen(
         )
     } else null
 
-    val hoverGridPos: Pair<Int, Int>? = if (activePiece != null && draggedPieceTopLeft != null && cellPx > 0f) {
-        val relX = draggedPieceTopLeft.x - boardOriginInRoot.x
-        val relY = draggedPieceTopLeft.y - boardOriginInRoot.y
-        val col = (relX / cellPx).roundToInt()
-        val row = (relY / cellPx).roundToInt()
-        if (BlockEngine.canPlace(session.board, activePiece.shape, row, col)) {
-            row to col
-        } else {
-            null
-        }
-    } else null
+    val hoverGridPos: Pair<Int, Int>? = computeHoverGridPos(
+        piece = activePiece,
+        fingerInRoot = dragFingerInRoot,
+        boardOriginInRoot = boardOriginInRoot,
+        boardPixelSize = boardPixelSize,
+        fingerLiftPx = fingerLiftPx,
+        board = session.board
+    )
 
     val clearPreview = remember(session.board, activePiece, hoverGridPos) {
         if (activePiece != null && hoverGridPos != null) {
@@ -191,7 +194,13 @@ fun GameScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { coords ->
+                rootOriginInRoot = coords.positionInRoot()
+            }
+    ) {
         PurpleArenaBackground()
 
         Column(
@@ -576,6 +585,8 @@ fun GameScreen(
                     val piece = session.tray.getOrNull(slotIndex)
                     val isDraggingThis = draggingIndex == slotIndex
                     var slotOriginInRoot by remember(slotIndex) { mutableStateOf(Offset.Zero) }
+                    val latestPiece by rememberUpdatedState(piece)
+                    val latestSlotOrigin by rememberUpdatedState(slotOriginInRoot)
 
                     Box(
                         modifier = Modifier
@@ -590,16 +601,23 @@ fun GameScreen(
                                         detectDragGestures(
                                             onDragStart = { startOffset ->
                                                 draggingIndex = slotIndex
-                                                dragFingerInRoot = slotOriginInRoot + startOffset
+                                                dragFingerInRoot = latestSlotOrigin + startOffset
                                             },
                                             onDrag = { change, _ ->
                                                 change.consume()
-                                                dragFingerInRoot = slotOriginInRoot + change.position
+                                                dragFingerInRoot = latestSlotOrigin + change.position
                                             },
                                             onDragEnd = {
-                                                val target = hoverGridPos
+                                                val target = computeHoverGridPos(
+                                                    piece = latestPiece,
+                                                    fingerInRoot = dragFingerInRoot,
+                                                    boardOriginInRoot = boardOriginInRoot,
+                                                    boardPixelSize = boardPixelSize,
+                                                    fingerLiftPx = fingerLiftPx,
+                                                    board = latestBoard
+                                                )
                                                 if (target != null) {
-                                                    onPlacePiece(slotIndex, target.first, target.second)
+                                                    latestOnPlacePiece(slotIndex, target.first, target.second)
                                                 }
                                                 draggingIndex = -1
                                             },
@@ -666,8 +684,8 @@ fun GameScreen(
                 modifier = Modifier
                     .offset {
                         IntOffset(
-                            x = draggedPieceTopLeft.x.roundToInt(),
-                            y = draggedPieceTopLeft.y.roundToInt()
+                            x = (draggedPieceTopLeft.x - rootOriginInRoot.x).roundToInt(),
+                            y = (draggedPieceTopLeft.y - rootOriginInRoot.y).roundToInt()
                         )
                     }
                     .size(widthDp, heightDp)
@@ -870,3 +888,24 @@ private fun TrayPieceThumbnail(piece: TrayPiece) {
         }
     }
 }
+
+private fun computeHoverGridPos(
+    piece: TrayPiece?,
+    fingerInRoot: Offset,
+    boardOriginInRoot: Offset,
+    boardPixelSize: Float,
+    fingerLiftPx: Float,
+    board: List<List<GridCell?>>
+): Pair<Int, Int>? {
+    if (piece == null || boardPixelSize <= 0f) return null
+    val cellPx = boardPixelSize / BOARD_SIZE
+    if (cellPx <= 0f) return null
+    val pieceW = piece.shape.cols * cellPx
+    val pieceH = piece.shape.rows * cellPx
+    val topLeftX = fingerInRoot.x - pieceW / 2f
+    val topLeftY = fingerInRoot.y - fingerLiftPx - pieceH / 2f
+    val col = ((topLeftX - boardOriginInRoot.x) / cellPx).roundToInt()
+    val row = ((topLeftY - boardOriginInRoot.y) / cellPx).roundToInt()
+    return if (BlockEngine.canPlace(board, piece.shape, row, col)) row to col else null
+}
+
