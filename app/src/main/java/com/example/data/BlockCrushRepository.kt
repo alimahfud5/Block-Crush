@@ -175,6 +175,126 @@ class BlockCrushRepository(
         }
     }
 
+    suspend fun syncLocalAndCloudProgress(
+        userId: String,
+        displayName: String,
+        local: PlayerProgress
+    ): Result<PlayerProgress> {
+        val docPath = "users/$userId"
+        return try {
+            val uid = requireUserId()
+            check(uid == userId) { "UID pengguna tidak cocok." }
+            val userRef = db.collection("users").document(uid)
+            val snapshot = userRef.get().await()
+            val safeName = displayName.trim().ifBlank { "Pemain" }.take(60)
+
+            val merged: PlayerProgress = if (snapshot.exists()) {
+                val cloud = snapshot.toObject(
+                    PlayerProgress::class.java,
+                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                ) ?: PlayerProgress(userId = uid)
+
+                val mergedCompleted = (cloud.completedLevels + local.completedLevels)
+                    .filter { it in 1L..96L }
+                    .distinct()
+                    .sorted()
+                val mergedHighest = maxOf(
+                    cloud.highestAdventureLevel,
+                    local.highestAdventureLevel,
+                    ((mergedCompleted.maxOrNull() ?: 0L) + 1L).coerceAtMost(96L)
+                ).coerceIn(1L, 96L)
+                val mergedBestScore = maxOf(cloud.classicBestScore, local.classicBestScore)
+                    .coerceIn(0L, 10_000_000L)
+                val mergedBestCombo = maxOf(cloud.classicBestCombo, local.classicBestCombo)
+                    .coerceIn(0L, 10_000L)
+                val mergedTotalStars = maxOf(
+                    cloud.totalStars,
+                    local.totalStars,
+                    (mergedCompleted.size * 3L)
+                ).coerceIn(0L, 1000L)
+                val mergedLines = maxOf(cloud.totalLinesCleared, local.totalLinesCleared)
+                    .coerceIn(0L, 10_000_000L)
+                val mergedWelcome = cloud.welcomeLetterSeen || local.welcomeLetterSeen
+
+                userRef.update(
+                    mapOf(
+                        "displayName" to safeName,
+                        "classicBestScore" to mergedBestScore,
+                        "classicBestCombo" to mergedBestCombo,
+                        "highestAdventureLevel" to mergedHighest,
+                        "completedLevels" to mergedCompleted,
+                        "totalStars" to mergedTotalStars,
+                        "totalLinesCleared" to mergedLines,
+                        "soundEnabled" to local.soundEnabled,
+                        "hapticsEnabled" to local.hapticsEnabled,
+                        "welcomeLetterSeen" to mergedWelcome,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+
+                cloud.copy(
+                    userId = uid,
+                    displayName = safeName,
+                    classicBestScore = mergedBestScore,
+                    classicBestCombo = mergedBestCombo,
+                    highestAdventureLevel = mergedHighest,
+                    completedLevels = mergedCompleted,
+                    totalStars = mergedTotalStars,
+                    totalLinesCleared = mergedLines,
+                    soundEnabled = local.soundEnabled,
+                    hapticsEnabled = local.hapticsEnabled,
+                    welcomeLetterSeen = mergedWelcome
+                )
+            } else {
+                val safeCompleted = local.completedLevels
+                    .filter { it in 1L..96L }
+                    .distinct()
+                    .sorted()
+                val safeHighest = local.highestAdventureLevel.coerceIn(1L, 96L)
+                val safeBestScore = local.classicBestScore.coerceIn(0L, 10_000_000L)
+                val safeBestCombo = local.classicBestCombo.coerceIn(0L, 10_000L)
+                val safeStars = local.totalStars.coerceIn(0L, 1000L)
+                val safeLines = local.totalLinesCleared.coerceIn(0L, 10_000_000L)
+
+                userRef.set(
+                    mapOf(
+                        "userId" to uid,
+                        "displayName" to safeName,
+                        "classicBestScore" to safeBestScore,
+                        "classicBestCombo" to safeBestCombo,
+                        "highestAdventureLevel" to safeHighest,
+                        "completedLevels" to safeCompleted,
+                        "totalStars" to safeStars,
+                        "totalLinesCleared" to safeLines,
+                        "soundEnabled" to local.soundEnabled,
+                        "hapticsEnabled" to local.hapticsEnabled,
+                        "welcomeLetterSeen" to local.welcomeLetterSeen,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+
+                local.copy(
+                    userId = uid,
+                    displayName = safeName,
+                    classicBestScore = safeBestScore,
+                    classicBestCombo = safeBestCombo,
+                    highestAdventureLevel = safeHighest,
+                    completedLevels = safeCompleted,
+                    totalStars = safeStars,
+                    totalLinesCleared = safeLines
+                )
+            }
+
+            Result.success(merged)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
     suspend fun recordGameResult(
         userId: String,
         mode: String,

@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.MailOutline
+import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
@@ -77,6 +78,7 @@ fun HomeScreen(
     onPlayAdventure: () -> Unit,
     onPlayClassic: () -> Unit,
     onOpenWelcomeLetter: () -> Unit,
+    onOpenCloudSave: () -> Unit,
     onOpenTutorial: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
@@ -145,6 +147,21 @@ fun HomeScreen(
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        IconButton(
+                            onClick = onOpenCloudSave,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(EmeraldBadge)
+                                .border(2.dp, EmeraldBadgeBorder, RoundedCornerShape(12.dp))
+                                .testTag("home_cloud_save_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Save,
+                                contentDescription = "Simpan Progres Manual",
+                                tint = Color.White
+                            )
+                        }
                         IconButton(
                             onClick = onOpenWelcomeLetter,
                             modifier = Modifier

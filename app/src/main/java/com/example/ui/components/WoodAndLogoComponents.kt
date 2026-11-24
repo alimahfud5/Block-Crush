@@ -655,8 +655,10 @@ fun SettingsDialog(
     soundEnabled: Boolean,
     hapticsEnabled: Boolean,
     showGameControls: Boolean,
+    signedInUserEmail: String?,
     onToggleSound: () -> Unit,
     onToggleHaptics: () -> Unit,
+    onOpenCloudSave: () -> Unit,
     onRestartGame: (() -> Unit)? = null,
     onExitToMenu: (() -> Unit)? = null,
     onSignOut: () -> Unit,
@@ -731,8 +733,31 @@ fun SettingsDialog(
                     )
                 }
 
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Button(
+                    onClick = {
+                        onDismiss()
+                        onOpenCloudSave()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF19A974),
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("settings_manual_save_button")
+                ) {
+                    Text(
+                        text = if (signedInUserEmail != null) "Simpan Manual / Cloud" else "Simpan Progres Manual",
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+
                 if (showGameControls && onRestartGame != null && onExitToMenu != null) {
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Button(
                         onClick = {
                             onDismiss()
@@ -772,25 +797,184 @@ fun SettingsDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = LetterLine)
-                Spacer(modifier = Modifier.height(12.dp))
+                if (signedInUserEmail != null) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = LetterLine)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Akun: $signedInUserEmail",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = WoodTextDark.copy(alpha = 0.8f)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            onDismiss()
+                            onSignOut()
+                        },
+                        border = BorderStroke(1.5.dp, RibbonRed),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("sign_out_button")
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.ExitToApp, contentDescription = null, tint = RibbonRed)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.sign_out), color = RibbonRed, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
 
-                OutlinedButton(
-                    onClick = {
-                        onDismiss()
-                        onSignOut()
-                    },
-                    border = BorderStroke(1.5.dp, RibbonRed),
+@Composable
+fun CloudSaveDialog(
+    bestScore: Long,
+    bestCombo: Long,
+    highestLevel: Long,
+    completedCount: Int,
+    signedInEmail: String?,
+    isSyncing: Boolean,
+    lastSyncText: String?,
+    onSaveLocalNow: () -> Unit,
+    onSignInAndSaveCloud: () -> Unit,
+    onSaveCloudNow: () -> Unit,
+    onSignOut: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = LetterPaper,
+            border = BorderStroke(3.dp, WoodButtonBorder),
+            shadowElevation = 12.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Penyimpanan Manual",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = WoodTextDark
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Rounded.Close, contentDescription = "Tutup", tint = WoodTextDark)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFFF3E2CD),
+                    border = BorderStroke(1.5.dp, LetterLine),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "Rekor Klasik: $bestScore • Combo Terbaik: $bestCombo",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = WoodTextDark
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Petualangan: Level $highestLevel ($completedCount/96 selesai)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = WoodTextDark.copy(alpha = 0.85f)
+                        )
+                        if (lastSyncText != null) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Terakhir disimpan ke Cloud: $lastSyncText",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF107852)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Button(
+                    onClick = onSaveLocalNow,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = WoodButtonBottom,
+                        contentColor = WoodTextDark
+                    ),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
-                        .testTag("sign_out_button")
+                        .height(50.dp)
+                        .testTag("save_local_now_button")
                 ) {
-                    Icon(Icons.AutoMirrored.Rounded.ExitToApp, contentDescription = null, tint = RibbonRed)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.sign_out), color = RibbonRed, fontWeight = FontWeight.Bold)
+                    Text("Simpan di Perangkat Sekarang", fontWeight = FontWeight.ExtraBold)
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (signedInEmail == null) {
+                    Button(
+                        onClick = onSignInAndSaveCloud,
+                        enabled = !isSyncing,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF19A974),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .testTag("manual_google_signin_save_button")
+                    ) {
+                        Text(
+                            text = if (isSyncing) "Menyimpan..." else "Masuk Google & Simpan Cloud",
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "Terhubung: $signedInEmail",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF107852),
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = onSaveCloudNow,
+                        enabled = !isSyncing,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF19A974),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .testTag("save_cloud_now_button")
+                    ) {
+                        Text(
+                            text = if (isSyncing) "Menyimpan ke Cloud..." else "Simpan ke Cloud Sekarang",
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onSignOut,
+                        border = BorderStroke(1.5.dp, RibbonRed),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth().height(46.dp)
+                    ) {
+                        Text("Keluar Akun Google", color = RibbonRed, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

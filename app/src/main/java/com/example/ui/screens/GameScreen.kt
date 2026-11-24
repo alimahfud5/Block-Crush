@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Button
@@ -118,6 +119,7 @@ fun GameScreen(
     onRestartGame: () -> Unit,
     onNextAdventureLevel: (Int) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenCloudSave: () -> Unit,
     onBackToMenu: () -> Unit
 ) {
     BackHandler { onBackToMenu() }
@@ -791,6 +793,25 @@ fun GameScreen(
                             Icon(Icons.Rounded.Refresh, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(stringResource(R.string.play_again), fontWeight = FontWeight.ExtraBold)
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Button(
+                            onClick = onOpenCloudSave,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = EmeraldBadge,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("game_over_save_button")
+                        ) {
+                            Icon(Icons.Rounded.Save, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Simpan Progres Manual", fontWeight = FontWeight.ExtraBold)
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))

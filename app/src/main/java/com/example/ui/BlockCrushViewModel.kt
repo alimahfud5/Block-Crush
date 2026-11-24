@@ -1,72 +1,46 @@
 package com.example.ui
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.BlockCrushRepository
-import com.example.data.MatchRecord
+import com.example.data.LocalProgressStore
 import com.example.data.PlayerProgress
-import com.example.data.UiState
 import com.example.game.BlockEngine
 import com.example.game.GameMode
 import com.example.game.GameSessionState
-import com.example.game.GemType
 import com.example.game.ParticleBurst
 import com.example.game.SoundFeedback
-import com.google.firebase.firestore.FirebaseFirestoreException
-import kotlinx.coroutines.CancellationException
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class BlockCrushViewModel(
-    private val repository: BlockCrushRepository,
-    private val currentUserId: String,
-    private val displayName: String
+    private val localStore: LocalProgressStore,
+    private val repository: BlockCrushRepository
 ) : ViewModel() {
 
     private val soundFeedback = SoundFeedback()
     private var particleSeq = 1L
 
-    val progressState: StateFlow<UiState<PlayerProgress>> = repository.observePlayerProgress(currentUserId)
-        .map<PlayerProgress?, UiState<PlayerProgress>> { progress ->
-            UiState.Success(progress ?: PlayerProgress(userId = currentUserId, displayName = displayName))
-        }
-        .catch { error ->
-            val firestoreError = generateSequence(error) { it.cause }
-                .filterIsInstance<FirebaseFirestoreException>()
-                .firstOrNull()
-            if (firestoreError == null && error is CancellationException) throw error
-            val rootError = firestoreError ?: error
-            Log.w(TAG, "Error observing player progress", rootError)
-            emit(UiState.Error(rootError.localizedMessage ?: "Gagal memuat progres pemain"))
-        }
+    val progress: StateFlow<PlayerProgress> = localStore.progressFlow
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
-            initialValue = UiState.Loading
+            initialValue = PlayerProgress()
         )
 
-    val recentMatchesState: StateFlow<List<MatchRecord>> = repository.observeRecentMatches(currentUserId)
-        .catch { error ->
-            val firestoreError = generateSequence(error) { it.cause }
-                .filterIsInstance<FirebaseFirestoreException>()
-                .firstOrNull()
-            if (firestoreError == null && error is CancellationException) throw error
-            Log.w(TAG, "Error observing recent matches", firestoreError ?: error)
-            emit(emptyList())
-        }
+    val lastCloudSyncMillis: StateFlow<Long> = localStore.lastCloudSyncFlow
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
-            initialValue = emptyList()
+            initialValue = 0L
         )
 
     private val _gameState = MutableStateFlow(GameSessionState())
@@ -75,20 +49,14 @@ class BlockCrushViewModel(
     private val _manualWelcomeOpen = MutableStateFlow<Boolean?>(null)
     val manualWelcomeOpen: StateFlow<Boolean?> = _manualWelcomeOpen.asStateFlow()
 
-    private val _actionError = MutableStateFlow<String?>(null)
-    val actionError: StateFlow<String?> = _actionError.asStateFlow()
+    private val _statusMessage = MutableStateFlow<String?>(null)
+    val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
+
+    private val _isCloudSyncing = MutableStateFlow(false)
+    val isCloudSyncing: StateFlow<Boolean> = _isCloudSyncing.asStateFlow()
 
     private val _hapticPulseTick = MutableStateFlow(0L)
     val hapticPulseTick: StateFlow<Long> = _hapticPulseTick.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            val result = repository.ensurePlayerProgress(currentUserId, displayName)
-            result.onFailure { err ->
-                _actionError.value = err.localizedMessage ?: "Gagal menyinkronkan profil"
-            }
-        }
-    }
 
     fun startClassicGame() {
         val board = BlockEngine.emptyBoard()
@@ -135,9 +103,9 @@ class BlockCrushViewModel(
         val piece = session.tray.getOrNull(trayIndex) ?: return false
         if (!BlockEngine.canPlace(session.board, piece.shape, startRow, startCol)) return false
 
-        val progress = (progressState.value as? UiState.Success)?.data
-        val soundOn = progress?.soundEnabled ?: true
-        val hapticsOn = progress?.hapticsEnabled ?: true
+        val currentProgress = progress.value
+        val soundOn = currentProgress.soundEnabled
+        val hapticsOn = currentProgress.hapticsEnabled
 
         val outcome = BlockEngine.placePieceAndResolve(
             board = session.board,
@@ -223,53 +191,98 @@ class BlockCrushViewModel(
         if (outcome.clearedCells.isNotEmpty() || outcome.bannerText != null) {
             viewModelScope.launch {
                 delay(650)
-                _gameState.update { it.copy(clearingCells = emptySet(), particles = emptyList(), floatingBanner = null) }
+                _gameState.update {
+                    it.copy(clearingCells = emptySet(), particles = emptyList(), floatingBanner = null)
+                }
             }
         }
 
-        if (levelWon || gameOver) {
-            persistMatchResult(
-                mode = if (session.mode == GameMode.ADVENTURE) "adventure" else "classic",
-                levelNumber = session.levelNumber,
-                score = updatedScore,
-                bestCombo = updatedBestCombo.toLong(),
-                linesCleared = updatedLines.toLong(),
-                won = levelWon
-            )
+        // Save local progress immediately whenever a score improves or match finishes
+        val modeName = if (session.mode == GameMode.ADVENTURE) "adventure" else "classic"
+        if (levelWon || gameOver || (session.mode == GameMode.CLASSIC && updatedScore > currentProgress.classicBestScore)) {
+            viewModelScope.launch {
+                localStore.recordGameResult(
+                    mode = modeName,
+                    levelNumber = session.levelNumber,
+                    score = updatedScore,
+                    bestCombo = updatedBestCombo.toLong(),
+                    linesCleared = if (levelWon || gameOver) updatedLines.toLong() else 0L,
+                    won = levelWon
+                )
+            }
         }
 
         return true
     }
 
-    private fun persistMatchResult(
-        mode: String,
-        levelNumber: Int,
-        score: Long,
-        bestCombo: Long,
-        linesCleared: Long,
-        won: Boolean
-    ) {
+    /**
+     * Manual save triggered explicitly by the player inside the game.
+     * Persists local snapshot to Firestore when signed in with Google.
+     */
+    fun saveProgressManuallyToCloud() {
+        val user = Firebase.auth.currentUser
+        if (user == null) {
+            _statusMessage.value = "Masuk dengan Google terlebih dahulu untuk menyimpan ke Cloud."
+            return
+        }
+        if (_isCloudSyncing.value) return
+
         viewModelScope.launch {
-            val result = repository.recordGameResult(
-                userId = currentUserId,
-                mode = mode,
-                levelNumber = levelNumber,
-                score = score,
-                bestCombo = bestCombo,
-                linesCleared = linesCleared,
-                won = won,
-                starsEarned = if (won) 3 else 0
-            )
-            result.onFailure { err ->
-                _actionError.value = err.localizedMessage ?: "Gagal menyimpan hasil permainan"
+            _isCloudSyncing.value = true
+            try {
+                val localSnapshot = localStore.getSnapshot()
+                val displayName = user.displayName ?: "Pemain"
+                val syncResult = repository.syncLocalAndCloudProgress(
+                    userId = user.uid,
+                    displayName = displayName,
+                    local = localSnapshot
+                )
+                syncResult.onSuccess { merged ->
+                    localStore.applyMergedProgress(merged, System.currentTimeMillis())
+                    val currentMatch = _gameState.value
+                    if (currentMatch.score > 0L) {
+                        val modeName = if (currentMatch.mode == GameMode.ADVENTURE) "adventure" else "classic"
+                        repository.recordGameResult(
+                            userId = user.uid,
+                            mode = modeName,
+                            levelNumber = currentMatch.levelNumber,
+                            score = currentMatch.score,
+                            bestCombo = currentMatch.bestComboInMatch.toLong(),
+                            linesCleared = currentMatch.linesCleared.toLong(),
+                            won = currentMatch.isLevelComplete,
+                            starsEarned = if (currentMatch.isLevelComplete) 3 else 0
+                        )
+                    }
+                    _statusMessage.value = "Progres berhasil disimpan ke Cloud!"
+                }.onFailure { err ->
+                    _statusMessage.value = "Gagal menyimpan ke Cloud: ${err.localizedMessage ?: "Periksa koneksi internet"}"
+                }
+            } finally {
+                _isCloudSyncing.value = false
             }
+        }
+    }
+
+    fun saveLocalSnapshotNow() {
+        val session = _gameState.value
+        val modeName = if (session.mode == GameMode.ADVENTURE) "adventure" else "classic"
+        viewModelScope.launch {
+            localStore.recordGameResult(
+                mode = modeName,
+                levelNumber = session.levelNumber,
+                score = session.score,
+                bestCombo = session.bestComboInMatch.toLong(),
+                linesCleared = session.linesCleared.toLong(),
+                won = session.isLevelComplete
+            )
+            _statusMessage.value = "Progres tersimpan di perangkat!"
         }
     }
 
     fun dismissWelcomeLetter() {
         _manualWelcomeOpen.value = false
         viewModelScope.launch {
-            repository.markWelcomeLetterSeen(currentUserId)
+            localStore.markWelcomeLetterSeen()
         }
     }
 
@@ -278,35 +291,31 @@ class BlockCrushViewModel(
     }
 
     fun toggleSound() {
-        val current = (progressState.value as? UiState.Success)?.data ?: return
+        val current = progress.value
         viewModelScope.launch {
-            val res = repository.updateSettings(
-                userId = currentUserId,
+            localStore.updateSettings(
                 soundEnabled = !current.soundEnabled,
                 hapticsEnabled = current.hapticsEnabled
             )
-            res.onFailure { err ->
-                _actionError.value = err.localizedMessage ?: "Gagal menyimpan pengaturan"
-            }
         }
     }
 
     fun toggleHaptics() {
-        val current = (progressState.value as? UiState.Success)?.data ?: return
+        val current = progress.value
         viewModelScope.launch {
-            val res = repository.updateSettings(
-                userId = currentUserId,
+            localStore.updateSettings(
                 soundEnabled = current.soundEnabled,
                 hapticsEnabled = !current.hapticsEnabled
             )
-            res.onFailure { err ->
-                _actionError.value = err.localizedMessage ?: "Gagal menyimpan pengaturan"
-            }
         }
     }
 
-    fun clearError() {
-        _actionError.value = null
+    fun showMessage(msg: String) {
+        _statusMessage.value = msg
+    }
+
+    fun clearMessage() {
+        _statusMessage.value = null
     }
 
     override fun onCleared() {
@@ -315,7 +324,6 @@ class BlockCrushViewModel(
     }
 
     private companion object {
-        const val TAG = "BlockCrushVM"
         const val STOP_TIMEOUT_MILLIS = 5000L
     }
 }
