@@ -1,0 +1,145 @@
+{
+  "entities": {
+    "PlayerProgress": {
+      "title": "PlayerProgress",
+      "description": "Stores a player's Block Crush high scores, best combo, adventure level progress, and audio/haptic preferences.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the player."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Player display name."
+        },
+        "classicBestScore": {
+          "type": "integer",
+          "description": "Highest score achieved in Classic 8x8 mode."
+        },
+        "classicBestCombo": {
+          "type": "integer",
+          "description": "Highest combo multiplier streak achieved."
+        },
+        "highestAdventureLevel": {
+          "type": "integer",
+          "description": "Highest unlocked Adventure level from 1 to 96."
+        },
+        "completedLevels": {
+          "type": "array",
+          "description": "Bounded list of completed Adventure level numbers (max 96)."
+        },
+        "totalStars": {
+          "type": "integer",
+          "description": "Total stars earned across Adventure levels."
+        },
+        "totalLinesCleared": {
+          "type": "integer",
+          "description": "Cumulative rows and columns cleared across all games."
+        },
+        "soundEnabled": {
+          "type": "boolean",
+          "description": "Whether game sound effects are enabled."
+        },
+        "hapticsEnabled": {
+          "type": "boolean",
+          "description": "Whether haptic vibration feedback is enabled."
+        },
+        "welcomeLetterSeen": {
+          "type": "boolean",
+          "description": "Whether the welcome envelope letter has been dismissed."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of document creation (clients submit FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (clients submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "classicBestScore",
+        "classicBestCombo",
+        "highestAdventureLevel",
+        "completedLevels",
+        "totalStars",
+        "totalLinesCleared",
+        "soundEnabled",
+        "hapticsEnabled",
+        "welcomeLetterSeen",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "MatchRecord": {
+      "title": "MatchRecord",
+      "description": "Immutable summary of a completed Classic or Adventure Block Crush session.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the player."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["classic", "adventure"],
+          "description": "Game mode played."
+        },
+        "levelNumber": {
+          "type": "integer",
+          "description": "Adventure level number (1-96) or 0 for Classic mode."
+        },
+        "score": {
+          "type": "integer",
+          "description": "Final score achieved in the match."
+        },
+        "bestCombo": {
+          "type": "integer",
+          "description": "Best combo achieved in the match."
+        },
+        "linesCleared": {
+          "type": "integer",
+          "description": "Total lines cleared in the match."
+        },
+        "won": {
+          "type": "boolean",
+          "description": "True if an Adventure level goal was completed."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the match record was saved (clients submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "mode",
+        "levelNumber",
+        "score",
+        "bestCombo",
+        "linesCleared",
+        "won",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/PlayerProgress"
+      },
+      "description": "Player profile, Classic high scores, Adventure progress, and settings scoped strictly to the owning user."
+    },
+    "/users/{userId}/matches/{matchId}": {
+      "schema": {
+        "$ref": "#/entities/MatchRecord"
+      },
+      "description": "Subcollection of completed Classic and Adventure match logs owned by the user."
+    }
+  }
+}

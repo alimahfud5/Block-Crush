@@ -1,0 +1,6 @@
+{
+  "name": "Block Crush",
+  "description": "Game puzzle Block Crush dengan mode Klasik 8x8, mode Petualangan 96 level, sistem kombo, serta penyimpanan skor dan progres.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

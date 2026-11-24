@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">Block Crush</string>
+    <string name="welcome_letter_body">Selamat datang kembali! Senang bertemu kamu lagi! Level baru menunggu kamu. Pecahkan rekormu dan terus bersenang-senang!</string>
+    <string name="adventure_tagline">Bergabung dengan Petualangan dan menangkan piala unik!</string>
+    <string name="best_combo_label">Combo Terbaik</string>
+    <string name="classic_mode">Klasik</string>
+    <string name="classic_board_subtitle">Papan 8×8</string>
+    <string name="adventure_mode">Petualangan</string>
+    <string name="new_badge">Baru!</string>
+    <string name="sign_in_with_google">Masuk dengan Google</string>
+    <string name="sign_out">Keluar Akun</string>
+    <string name="settings_title">Pengaturan</string>
+    <string name="how_to_play_title">Cara Bermain</string>
+    <string name="game_over_title">Permainan Selesai</string>
+    <string name="level_complete_title">Level Selesai!</string>
+    <string name="play_again">Main Lagi</string>
+    <string name="back_to_menu">Menu Utama</string>
+    <string name="next_level">Level Berikutnya</string>
+</resources>

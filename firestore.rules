@@ -1,0 +1,121 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidPlayerProgress(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
+             data.classicBestScore is int && data.classicBestScore >= 0 && data.classicBestScore <= 10000000 &&
+             data.classicBestCombo is int && data.classicBestCombo >= 0 && data.classicBestCombo <= 10000 &&
+             data.highestAdventureLevel is int && data.highestAdventureLevel >= 1 && data.highestAdventureLevel <= 96 &&
+             data.completedLevels is list && data.completedLevels.size() <= 96 &&
+             (data.completedLevels.size() == 0 || data.completedLevels[0] is int) &&
+             data.totalStars is int && data.totalStars >= 0 && data.totalStars <= 1000 &&
+             data.totalLinesCleared is int && data.totalLinesCleared >= 0 && data.totalLinesCleared <= 10000000 &&
+             data.soundEnabled is bool &&
+             data.hapticsEnabled is bool &&
+             data.welcomeLetterSeen is bool;
+    }
+
+    function isValidMatchRecord(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.mode in ['classic', 'adventure'] &&
+             data.levelNumber is int && data.levelNumber >= 0 && data.levelNumber <= 96 &&
+             data.score is int && data.score >= 0 && data.score <= 10000000 &&
+             data.bestCombo is int && data.bestCombo >= 0 && data.bestCombo <= 10000 &&
+             data.linesCleared is int && data.linesCleared >= 0 && data.linesCleared <= 10000 &&
+             data.won is bool;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'classicBestScore', 'classicBestCombo',
+                         'highestAdventureLevel', 'completedLevels', 'totalStars',
+                         'totalLinesCleared', 'soundEnabled', 'hapticsEnabled',
+                         'welcomeLetterSeen', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'classicBestScore', 'classicBestCombo',
+                         'highestAdventureLevel', 'completedLevels', 'totalStars',
+                         'totalLinesCleared', 'soundEnabled', 'hapticsEnabled',
+                         'welcomeLetterSeen', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp &&
+                       incoming().updatedAt <= request.time &&
+                       isValidPlayerProgress(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidPlayerProgress(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp &&
+                       incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName', 'classicBestScore', 'classicBestCombo',
+                         'highestAdventureLevel', 'completedLevels', 'totalStars',
+                         'totalLinesCleared', 'soundEnabled', 'hapticsEnabled',
+                         'welcomeLetterSeen', 'updatedAt'
+                       ]);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /matches/{matchId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(matchId);
+        allow list: if isOwner(userId) && isValidId(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(matchId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll([
+                           'userId', 'mode', 'levelNumber', 'score',
+                           'bestCombo', 'linesCleared', 'won', 'createdAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'mode', 'levelNumber', 'score',
+                           'bestCombo', 'linesCleared', 'won', 'createdAt'
+                         ]) &&
+                         incoming().createdAt is timestamp &&
+                         incoming().createdAt <= request.time &&
+                         isValidMatchRecord(incoming());
+
+        allow update: if false;
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(matchId);
+      }
+    }
+  }
+}
